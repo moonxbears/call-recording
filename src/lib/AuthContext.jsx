@@ -1,11 +1,9 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
-import { supabase } from '../api/supabaseClient';
+import React, { createContext, useContext, useEffect, useState, useMemo, useCallback } from "react";
+import { supabase } from "../api/supabaseClient";
 
 const AuthContext = createContext({});
 
-export const useAuth = () => {
-  return useContext(AuthContext);
-};
+export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
@@ -13,103 +11,83 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Fetch the current session on load
-    const initializeAuth = async () => {
-      const { data: { session }, error } = await supabase.auth.getSession();
-      if (error) {
-        console.error('Error fetching session:', error.message);
-      }
+    // 1. Fetch initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);
-    };
+    }).catch((err) => {
+      console.error("Auth init error:", err);
+      setLoading(false);
+    });
 
-    initializeAuth();
-
-    // Listen for auth state changes (login, logout, token refresh)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, activeSession) => {
-        setSession(activeSession);
-        setUser(activeSession?.user ?? null);
-        setLoading(false);
-      }
-    );
+    // 2. Listen for auth changes (OAuth callback, login, logout)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, activeSession) => {
+      setSession(activeSession);
+      setUser(activeSession?.user ?? null);
+      setLoading(false);
+    });
 
     return () => {
       subscription?.unsubscribe();
     };
   }, []);
 
-  // Standard email/password registration
-  const register = async (email, password) => {
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-    });
+  const register = useCallback(async (email, password) => {
+    const { data, error } = await supabase.auth.signUp({ email, password });
     if (error) throw error;
     return data;
-  };
+  }, []);
 
-  // Standard email/password login
-  const login = async (email, password) => {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+  const login = useCallback(async (email, password) => {
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
     return data;
-  };
+  }, []);
 
-  // Login with Google
-  const loginWithGoogle = async () => {
+  const loginWithGoogle = useCallback(async () => {
     const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
+      provider: "google",
       options: {
-        scopes: 'https://www.googleapis.com/auth/drive.file', // Requests Drive access
-        redirectTo: `${window.location.origin}/`, // Redirects back to your app after login
-      }
+        redirectTo: `${window.location.origin}/`,
+      },
     });
     if (error) throw error;
-  };
+  }, []);
 
-  // Logout function
-  const logout = async () => {
+  const logout = useCallback(async () => {
     const { error } = await supabase.auth.signOut();
     if (error) throw error;
-  };
+  }, []);
 
-  // Password reset request
-  const resetPassword = async (email) => {
+  const resetPassword = useCallback(async (email) => {
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: `${window.location.origin}/reset-password`,
     });
     if (error) throw error;
-  };
+  }, []);
 
-  // Update user password (used on the ResetPassword page)
-  const updatePassword = async (newPassword) => {
-    const { data, error } = await supabase.auth.updateUser({
-      password: newPassword
-    });
+  const updatePassword = useCallback(async (newPassword) => {
+    const { data, error } = await supabase.auth.updateUser({ password: newPassword });
     if (error) throw error;
     return data;
-  };
+  }, []);
 
-  const value = {
-    user,
-    session,
-    loading,
-    register,
-    login,
-    loginWithGoogle,
-    logout,
-    resetPassword,
-    updatePassword,
-  };
-
-  return (
-    <AuthContext.Provider value={value}>
-      {!loading && children}
-    </AuthContext.Provider>
+  // Stable memoized value stops infinite render loops in consumer components
+  const value = useMemo(
+    () => ({
+      user,
+      session,
+      loading,
+      register,
+      login,
+      loginWithGoogle,
+      logout,
+      resetPassword,
+      updatePassword,
+    }),
+    [user, session, loading, register, login, loginWithGoogle, logout, resetPassword, updatePassword]
   );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };

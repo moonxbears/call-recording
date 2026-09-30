@@ -18,7 +18,6 @@ import PageNotFound from "@/lib/PageNotFound";
 const AuthenticatedApp = () => {
   const { loading } = useAuth();
 
-  // Show loading spinner while Auth Context initializes session
   if (loading) {
     return (
       <div className="fixed inset-0 flex items-center justify-center bg-[#090D16]">

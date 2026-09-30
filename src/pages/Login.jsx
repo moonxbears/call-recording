@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { Link } from "react-router-dom";
+import React, { useState, useEffect } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,14 +10,21 @@ import GoogleIcon from "@/components/GoogleIcon";
 import { safeReturnTo } from "@/lib/authReturnTo";
 
 export default function Login() {
-  const { login, loginWithGoogle } = useAuth();
+  const { user, login, loginWithGoogle } = useAuth();
+  const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  // Post-login destination (e.g. the MCP OAuth consent page sends users here
-  // with returnTo so the grant flow can resume). Same-origin paths only.
+
   const returnTo = safeReturnTo();
+
+  // If user is already authenticated, redirect immediately
+  useEffect(() => {
+    if (user) {
+      navigate(returnTo, { replace: true });
+    }
+  }, [user, returnTo, navigate]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -25,7 +32,7 @@ export default function Login() {
     setLoading(true);
     try {
       await login(email, password);
-      window.location.href = returnTo;
+      navigate(returnTo, { replace: true });
     } catch (err) {
       setError(err.message || "Invalid email or password");
     } finally {
@@ -36,9 +43,9 @@ export default function Login() {
   const handleGoogle = async () => {
     try {
       await loginWithGoogle();
-    } catch (error) {
-      console.error("Google login failed:", error);
-      // Optional: Set a local error state here to show a toast/message to the user
+    } catch (err) {
+      console.error("Google login failed:", err);
+      setError(err.message || "Failed to sign in with Google");
     }
   };
 
