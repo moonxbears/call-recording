@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { base44 } from "@/api/base44Client";
+
 import { ArrowLeft, Mic, Languages, FileOutput, Bell, Save, Check } from "lucide-react";
 import SettingSection from "@/components/settings/SettingSection";
 import ToggleRow from "@/components/settings/ToggleRow";

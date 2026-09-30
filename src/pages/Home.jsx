@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
-import { base44 } from "@/api/base44Client";
+
 import IconRail from "@/components/calls/IconRail";
 import CallListPanel from "@/components/calls/CallListPanel";
 import PlaybackStudio from "@/components/calls/PlaybackStudio";
