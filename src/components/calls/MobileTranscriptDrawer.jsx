@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+// import React, { useEffect } from "react";
 import {
   Sheet,
   SheetContent,
@@ -9,7 +9,7 @@ import { Play, Pause, SkipBack, SkipForward, X, Star, PhoneIncoming, PhoneOutgoi
 import { cn } from "@/lib/utils";
 import WaveformVisualizer from "./WaveformVisualizer";
 import TranscriptView from "./TranscriptView";
-import { formatDuration, formatTimecode, formatTimestamp, generateWaveform, SENTIMENT_STYLES } from "@/lib/callUtils";
+import { formatTimecode, formatTimestamp, generateWaveform, SENTIMENT_STYLES } from "@/lib/callUtils";
 
 export default function MobileTranscriptDrawer({
   call,

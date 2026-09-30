@@ -1,9 +1,16 @@
 import React from "react";
-import { Play, Pause, SkipBack, SkipForward, Download, Share2, FileText, Star, PhoneIncoming, PhoneOutgoing, Clock } from "lucide-react";
+import { 
+  Play, Pause, SkipBack, SkipForward, Download, 
+  Share2, FileText, Star, PhoneIncoming, PhoneOutgoing, Clock 
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import WaveformVisualizer from "./WaveformVisualizer";
 import TranscriptView from "./TranscriptView";
-import { formatDuration, formatTimecode, formatTimestamp, generateWaveform, SENTIMENT_STYLES, speakerStyle } from "@/lib/callUtils";
+import { 
+  formatDuration, formatTimecode, formatTimestamp, 
+  generateWaveform, SENTIMENT_STYLES, speakerStyle 
+} from "@/lib/callUtils";
+import { toast } from "@/components/ui/use-toast";
 
 export default function PlaybackStudio({
   call,
@@ -15,6 +22,26 @@ export default function PlaybackStudio({
   onToggleStar,
   searchQuery,
 }) {
+  // Schema fallbacks for Supabase field names
+  const duration = call?.duration ?? call?.duration_sec ?? 0;
+  const createdAt = call?.created_at ?? call?.intercepted_at ?? call?.created_date;
+
+  // React hooks MUST be called at the top level before any early return
+  const parsedTranscript = React.useMemo(() => {
+    if (!call?.transcript) return [];
+    if (Array.isArray(call.transcript)) return call.transcript;
+    if (typeof call.transcript === "string") {
+      try {
+        const parsed = JSON.parse(call.transcript);
+        if (Array.isArray(parsed)) return parsed;
+      } catch {
+        return [{ speaker: "Speaker 1", text: call.transcript, start: 0, end: duration }];
+      }
+    }
+    return [];
+  }, [call?.transcript, duration]);
+
+  // Early return for empty state (now placed AFTER all hooks)
   if (!call) {
     return (
       <div className="flex-1 hidden md:flex items-center justify-center bg-[#090D16]">
@@ -28,11 +55,57 @@ export default function PlaybackStudio({
     );
   }
 
-  const duration = call.duration_sec || 0;
   const progress = duration > 0 ? currentTime / duration : 0;
   const waveform = call.waveform?.length ? call.waveform : generateWaveform(call.id || call.title, 80);
   const DirectionIcon = call.direction === "outgoing" ? PhoneOutgoing : PhoneIncoming;
   const sentiment = SENTIMENT_STYLES[call.sentiment] || SENTIMENT_STYLES.neutral;
+
+  // Export: Download Audio File from Supabase Storage
+  const handleDownloadAudio = () => {
+    if (!call.audio_url) {
+      toast({ title: "No Audio Available", description: "This call record has no audio file associated with it." });
+      return;
+    }
+    const link = document.createElement("a");
+    link.href = call.audio_url;
+    link.download = `${call.contact_name || "call-recording"}-${call.id}.mp3`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Export: Generate and Download Transcript .txt File
+  const handleDownloadTranscript = () => {
+    if (!parsedTranscript.length) {
+      toast({ title: "No Transcript", description: "No transcript data available to export." });
+      return;
+    }
+
+    const textContent = parsedTranscript
+      .map((t) => `[${formatTimecode(t.start || 0)}] ${t.speaker || "Speaker"}: ${t.text}`)
+      .join("\n\n");
+
+    const blob = new Blob([textContent], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `transcript-${call.contact_name || call.id}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  // Export: Copy Link to Clipboard
+  const handleShare = async () => {
+    try {
+      const shareUrl = call.audio_url || window.location.href;
+      await navigator.clipboard.writeText(shareUrl);
+      toast({ title: "Link Copied", description: "Call link copied to clipboard." });
+    } catch {
+      toast({ title: "Error", description: "Failed to copy link.", variant: "destructive" });
+    }
+  };
 
   return (
     <div className="flex-1 flex flex-col min-w-0 bg-[#090D16] h-full">
@@ -43,18 +116,18 @@ export default function PlaybackStudio({
             <div className="flex items-center gap-2 mb-1">
               <DirectionIcon className="h-4 w-4 text-amber-400" />
               <h1 className="font-display text-2xl font-bold text-slate-100 truncate">
-                {call.contact_name || call.title}
+                {call.contact_name || call.title || "Unknown Contact"}
               </h1>
             </div>
             <div className="flex items-center gap-3 font-mono-data text-xs text-slate-500">
-              <span>{call.phone_number}</span>
+              <span>{call.phone_number || "No number"}</span>
               <span className="text-slate-700">·</span>
               <span className="flex items-center gap-1">
                 <Clock className="h-3 w-3" />
-                {formatTimestamp(call.intercepted_at || call.created_date)}
+                {formatTimestamp(createdAt)}
               </span>
               <span className="text-slate-700">·</span>
-              <span>{formatDuration(call.duration_sec)}</span>
+              <span>{formatDuration(duration)}</span>
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
@@ -146,9 +219,9 @@ export default function PlaybackStudio({
       {/* Export actions */}
       <div className="px-6 py-3 border-b border-[#1E293B]/60 flex items-center gap-2">
         <span className="font-mono-data text-[11px] uppercase tracking-wider text-slate-600 mr-1">Export</span>
-        <ExportButton icon={FileText} label="Transcript" />
-        <ExportButton icon={Download} label="Audio" />
-        <ExportButton icon={Share2} label="Share" />
+        <ExportButton icon={FileText} label="Transcript" onClick={handleDownloadTranscript} />
+        <ExportButton icon={Download} label="Audio" onClick={handleDownloadAudio} />
+        <ExportButton icon={Share2} label="Share" onClick={handleShare} />
       </div>
 
       {/* Transcript */}
@@ -164,7 +237,7 @@ export default function PlaybackStudio({
           )}
         </div>
         <TranscriptView
-          transcript={call.transcript || []}
+          transcript={parsedTranscript}
           speakers={call.speakers || []}
           currentTime={currentTime}
           searchQuery={searchQuery}
@@ -176,9 +249,12 @@ export default function PlaybackStudio({
   );
 }
 
-function ExportButton({ icon: Icon, label }) {
+function ExportButton({ icon: Icon, label, onClick }) {
   return (
-    <button className="flex items-center gap-1.5 h-8 px-3 rounded-lg border border-[#1E293B] bg-white/[0.02] text-xs font-medium text-slate-400 hover:text-slate-100 hover:border-slate-600 transition-colors">
+    <button
+      onClick={onClick}
+      className="flex items-center gap-1.5 h-8 px-3 rounded-lg border border-[#1E293B] bg-white/[0.02] text-xs font-medium text-slate-400 hover:text-slate-100 hover:border-slate-600 transition-colors"
+    >
       <Icon className="h-3.5 w-3.5" />
       {label}
     </button>

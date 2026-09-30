@@ -60,6 +60,18 @@ export const AuthProvider = ({ children }) => {
     return data;
   };
 
+  // Login with Google
+  const loginWithGoogle = async () => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        scopes: 'https://www.googleapis.com/auth/drive.file', // Requests Drive access
+        redirectTo: `${window.location.origin}/`, // Redirects back to your app after login
+      }
+    });
+    if (error) throw error;
+  };
+
   // Logout function
   const logout = async () => {
     const { error } = await supabase.auth.signOut();
@@ -89,6 +101,7 @@ export const AuthProvider = ({ children }) => {
     loading,
     register,
     login,
+    loginWithGoogle,
     logout,
     resetPassword,
     updatePassword,

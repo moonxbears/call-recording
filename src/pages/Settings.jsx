@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-
 import { ArrowLeft, Mic, Languages, FileOutput, Bell, Save, Check } from "lucide-react";
+import { supabase } from "@/api/supabaseClient";
+import { useAuth } from "@/lib/AuthContext";
 import SettingSection from "@/components/settings/SettingSection";
 import ToggleRow from "@/components/settings/ToggleRow";
 import SelectRow from "@/components/settings/SelectRow";
@@ -23,7 +24,7 @@ const DEFAULTS = {
   audio_quality: "high",
   transcript_format: "txt",
   include_timestamps: true,
-  auto_export_cloud: false,
+  auto_export_cloud: true,
   notify_new_recording: true,
   notify_transcription_ready: true,
   email_summary: "weekly",
@@ -44,6 +45,8 @@ const LANGUAGES = [
 
 export default function Settings() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+
   const [settings, setSettings] = useState(DEFAULTS);
   const [recordId, setRecordId] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -52,20 +55,27 @@ export default function Settings() {
 
   useEffect(() => {
     (async () => {
+      if (!user) return;
       try {
-        const res = await base44.entities.Setting.filter({}, { limit: 1 });
-        const existing = (res.items || [])[0];
-        if (existing) {
-          setSettings({ ...DEFAULTS, ...existing });
-          setRecordId(existing.id);
+        setLoading(true);
+        const { data, error } = await supabase
+          .from("settings")
+          .select("*")
+          .eq("user_id", user.id)
+          .maybeSingle();
+
+        if (error) throw error;
+        if (data) {
+          setSettings({ ...DEFAULTS, ...data });
+          setRecordId(data.id);
         }
       } catch (e) {
-        console.error("Failed to load settings", e);
+        console.error("Failed to load settings from Supabase", e);
       } finally {
         setLoading(false);
       }
     })();
-  }, []);
+  }, [user]);
 
   const update = useCallback((key, value) => {
     setSettings((prev) => ({ ...prev, [key]: value }));
@@ -73,27 +83,30 @@ export default function Settings() {
   }, []);
 
   const handleSave = useCallback(async () => {
+    if (!user) return;
     setSaving(true);
     try {
-      const payload = { ...settings };
+      const payload = { ...settings, user_id: user.id, updated_at: new Date().toISOString() };
       delete payload.id;
-      delete payload.created_date;
-      delete payload.updated_date;
-      delete payload.created_by_id;
-      if (recordId) {
-        await base44.entities.Setting.update(recordId, payload);
-      } else {
-        const created = await base44.entities.Setting.create(payload);
-        setRecordId(created.id);
-      }
+      delete payload.created_at;
+
+      const { data, error } = await supabase
+        .from("settings")
+        .upsert(payload, { onConflict: "user_id" })
+        .select()
+        .single();
+
+      if (error) throw error;
+      if (data) setRecordId(data.id);
+
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
     } catch (e) {
-      console.error("Failed to save settings", e);
+      console.error("Failed to save settings to Supabase", e);
     } finally {
       setSaving(false);
     }
-  }, [settings, recordId]);
+  }, [settings, user]);
 
   return (
     <div className="min-h-screen bg-[#090D16] text-slate-100">
@@ -131,6 +144,7 @@ export default function Settings() {
           </div>
         ) : (
           <>
+            {/* Call Recording */}
             <SettingSection
               icon={Mic}
               title="Call Recording"
@@ -185,6 +199,7 @@ export default function Settings() {
               />
             </SettingSection>
 
+            {/* Transcription */}
             <SettingSection
               icon={Languages}
               title="Transcription"
@@ -228,6 +243,7 @@ export default function Settings() {
               />
             </SettingSection>
 
+            {/* Output */}
             <SettingSection
               icon={FileOutput}
               title="Output"
@@ -282,6 +298,7 @@ export default function Settings() {
               />
             </SettingSection>
 
+            {/* Notifications */}
             <SettingSection
               icon={Bell}
               title="Notifications"

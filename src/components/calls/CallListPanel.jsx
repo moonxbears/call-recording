@@ -1,63 +1,62 @@
-import React from "react";
-import { cn } from "@/lib/utils";
-import CallListItem from "./CallListItem";
-import SearchBar from "./SearchBar";
-import FilterChips from "./FilterChips";
-import { Radio } from "lucide-react";
+import React, { useState, useEffect } from 'react';
+import CallListPanel from './CallListPanel';
+import { supabase } from '../../api/supabaseClient';
+import { useAuth } from '../../lib/AuthContext';
 
-export default function CallListPanel({
-  calls,
-  selectedId,
-  onSelect,
-  onToggleStar,
-  searchQuery,
-  onSearchChange,
-  activeFilter,
-  onFilterChange,
-  counts,
-  loading,
-}) {
+export default function Home() {
+  const { user } = useAuth();
+  const [calls, setCalls] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedId, setSelectedId] = useState(null);
+  
+  // Example state for the panel's other props
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeFilter, setActiveFilter] = useState('all');
+
+  useEffect(() => {
+    const fetchCalls = async () => {
+      if (!user) return;
+      
+      setLoading(true);
+      // Fetch calls for the logged-in user from Supabase
+      const { data, error } = await supabase
+        .from('calls')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching calls:', error);
+      } else {
+        setCalls(data || []);
+      }
+      setLoading(false);
+    };
+
+    fetchCalls();
+  }, [user]); // Re-run if the user changes
+
+  // Dummy counts for the FilterChips
+  const counts = { all: calls.length, starred: 0, unread: 0 };
+
   return (
-    <div className="flex flex-col w-full md:w-[360px] shrink-0 border-r border-[#1E293B] bg-[#0B1118] h-full">
-      <div className="px-4 pt-4 pb-3 space-y-3 border-b border-[#1E293B]/60">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="flex h-7 w-7 items-center justify-center rounded-md bg-amber-500/15 border border-amber-500/40">
-              <Radio className="h-3.5 w-3.5 text-amber-400" />
-            </span>
-            <h2 className="font-display text-base font-bold text-slate-100 tracking-tight">Intercept Log</h2>
-          </div>
-          <span className="flex items-center gap-1.5 text-[11px] font-medium text-emerald-400">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-signal-blink" />
-            LIVE
-          </span>
-        </div>
-        <SearchBar value={searchQuery} onChange={onSearchChange} />
-        <FilterChips active={activeFilter} onChange={onFilterChange} counts={counts} />
-      </div>
-      <div className="flex-1 overflow-y-auto scrollbar-thin">
-        {loading ? (
-          <div className="px-4 py-6 space-y-3">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="h-20 rounded-lg bg-white/[0.02] animate-pulse" />
-            ))}
-          </div>
-        ) : calls.length === 0 ? (
-          <div className="px-4 py-10 text-center text-sm text-slate-600">
-            No calls match your filters.
-          </div>
-        ) : (
-          calls.map((call) => (
-            <CallListItem
-              key={call.id}
-              call={call}
-              active={call.id === selectedId}
-              onSelect={onSelect}
-              onToggleStar={onToggleStar}
-              searchQuery={searchQuery}
-            />
-          ))
-        )}
+    <div className="flex h-screen bg-background">
+      <CallListPanel 
+        calls={calls}
+        loading={loading}
+        selectedId={selectedId}
+        onSelect={(id) => setSelectedId(id)}
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        activeFilter={activeFilter}
+        onFilterChange={setActiveFilter}
+        counts={counts}
+        onToggleStar={(id) => console.log('Star toggled for', id)}
+      />
+      
+      {/* Your PlaybackStudio or Main Content area goes here */}
+      <div className="flex-1">
+         {/* ... */}
       </div>
     </div>
   );

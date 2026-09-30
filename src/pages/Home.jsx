@@ -1,14 +1,18 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
+import { supabase } from "@/api/supabaseClient";
+import { useAuth } from "@/lib/AuthContext";
 
 import IconRail from "@/components/calls/IconRail";
 import CallListPanel from "@/components/calls/CallListPanel";
 import PlaybackStudio from "@/components/calls/PlaybackStudio";
 import CallCard from "@/components/calls/CallCard";
 import MobileTranscriptDrawer from "@/components/calls/MobileTranscriptDrawer";
-import SearchBar from "@/components/calls/SearchBar";
 import { Radio } from "lucide-react";
+import SearchBar from "@/components/calls/SearchBar";
 
 export default function Home() {
+  const { user } = useAuth();
+  
   const [calls, setCalls] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState(null);
@@ -22,53 +26,70 @@ export default function Home() {
   const selectedCall = calls.find((c) => c.id === selectedId) || null;
   const tickRef = useRef(null);
 
-  // Build the server query from filter + search
-  const buildQuery = useCallback(() => {
-    const q = {};
-    if (activeFilter === "unread") q.read = false;
-    if (activeFilter === "starred") q.starred = true;
-    if (searchQuery.trim()) {
-      q.$or = [
-        { title: { $regex: searchQuery.trim(), $options: "i" } },
-        { contact_name: { $regex: searchQuery.trim(), $options: "i" } },
-        { phone_number: { $regex: searchQuery.trim(), $options: "i" } },
-        { "transcript.text": { $regex: searchQuery.trim(), $options: "i" } },
-      ];
-    }
-    return q;
-  }, [activeFilter, searchQuery]);
-
-  // Load list
+  // Load list from Supabase
   const loadCalls = useCallback(async () => {
+    if (!user) return;
     setLoading(true);
+    
     try {
-      const res = await base44.entities.Call.filter(buildQuery(), {
-        sort: "-intercepted_at",
-        limit: 50,
-      });
-      setCalls(res.items || []);
+      let query = supabase
+        .from('calls')
+        .select('*')
+        .eq('user_id', user.id) // Only get this user's calls
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      // Apply Filters
+      if (activeFilter === "unread") query = query.eq('read', false);
+      if (activeFilter === "starred") query = query.eq('starred', true);
+
+      // Apply Search
+      if (searchQuery.trim()) {
+        const term = `%${searchQuery.trim()}%`;
+        // Supabase ILIKE search across multiple columns
+        query = query.or(`title.ilike.${term},contact_name.ilike.${term},phone_number.ilike.${term},transcript.ilike.${term}`);
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+      
+      setCalls(data || []);
     } catch (e) {
       console.error("Failed to load calls", e);
       setCalls([]);
     } finally {
       setLoading(false);
     }
-  }, [buildQuery]);
+  }, [user, activeFilter, searchQuery]);
 
-  // Load counts (global, unfiltered by search)
+  // Load counts for the sidebar chips
   const loadCounts = useCallback(async () => {
+    if (!user) return;
+    
     try {
+      // Helper function to get exact counts from Supabase without downloading the rows
+      const getCount = async (filterCol, filterVal) => {
+        let q = supabase.from('calls').select('*', { count: 'exact', head: true }).eq('user_id', user.id);
+        if (filterCol) q = q.eq(filterCol, filterVal);
+        
+        const { count, error } = await q;
+        if (error) throw error;
+        return count || 0;
+      };
+
       const [all, unread, starred] = await Promise.all([
-        base44.entities.Call.count({}),
-        base44.entities.Call.count({ read: false }),
-        base44.entities.Call.count({ starred: true }),
+        getCount(null, null),
+        getCount('read', false),
+        getCount('starred', true),
       ]);
+      
       setCounts({ all, unread, starred });
     } catch (e) {
       console.error("Failed to load counts", e);
     }
-  }, []);
+  }, [user]);
 
+  // Fetch data when filters or user changes
   useEffect(() => {
     loadCalls();
   }, [loadCalls]);
@@ -83,9 +104,10 @@ export default function Home() {
       tickRef.current = setInterval(() => {
         setCurrentTime((t) => {
           const next = t + 0.1;
-          if (next >= selectedCall.duration_sec) {
+          const duration = selectedCall.duration || 0;
+          if (next >= duration) {
             setIsPlaying(false);
-            return selectedCall.duration_sec;
+            return duration;
           }
           return next;
         });
@@ -94,17 +116,20 @@ export default function Home() {
     }
   }, [isPlaying, selectedCall]);
 
+  // Handle opening a call and marking it read in Supabase
   const handleSelect = useCallback(
     async (id) => {
       setSelectedId(id);
       setCurrentTime(0);
       setIsPlaying(false);
       setMobileOpen(true);
-      // mark as read
+      
       const call = calls.find((c) => c.id === id);
-      if (call && !call.read) {
+      if (call && call.read !== true) {
         try {
-          await base44.entities.Call.update(id, { read: true });
+          const { error } = await supabase.from('calls').update({ read: true }).eq('id', id);
+          if (error) throw error;
+          
           setCalls((prev) => prev.map((c) => (c.id === id ? { ...c, read: true } : c)));
           setCounts((prev) => ({ ...prev, unread: Math.max(0, prev.unread - 1) }));
         } catch (e) {
@@ -115,11 +140,14 @@ export default function Home() {
     [calls]
   );
 
+  // Handle toggling the star status in Supabase
   const handleToggleStar = useCallback(
     async (call) => {
       const newVal = !call.starred;
       try {
-        await base44.entities.Call.update(call.id, { starred: newVal });
+        const { error } = await supabase.from('calls').update({ starred: newVal }).eq('id', call.id);
+        if (error) throw error;
+        
         setCalls((prev) => prev.map((c) => (c.id === call.id ? { ...c, starred: newVal } : c)));
         setCounts((prev) => ({
           ...prev,
@@ -135,13 +163,13 @@ export default function Home() {
   const handlePlayPause = useCallback(() => setIsPlaying((p) => !p), []);
   const handleSeek = useCallback(
     (t) => {
-      setCurrentTime(Math.max(0, Math.min(t, selectedCall?.duration_sec || 0)));
+      setCurrentTime(Math.max(0, Math.min(t, selectedCall?.duration || 0)));
     },
     [selectedCall]
   );
   const handleSkip = useCallback(
     (delta) => {
-      setCurrentTime((t) => Math.max(0, Math.min(t + delta, selectedCall?.duration_sec || 0)));
+      setCurrentTime((t) => Math.max(0, Math.min(t + delta, selectedCall?.duration || 0)));
     },
     [selectedCall]
   );

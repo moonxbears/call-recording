@@ -1,28 +1,32 @@
-// import { getAccessToken } from '@base44/sdk';
+import { supabase } from "@/api/supabaseClient";
 
-const isNode = typeof window === 'undefined';
+const isNode = typeof window === "undefined";
 
 const isClearAccessTokenRequested = () =>
-	!isNode && new URLSearchParams(window.location.search).get("clear_access_token") === 'true';
+  !isNode && new URLSearchParams(window.location.search).get("clear_access_token") === "true";
 
-const clearStoredAccessToken = () => {
-	window.localStorage.removeItem('base44_access_token');
-	window.localStorage.removeItem('token');
-}
+const clearStoredAccessToken = async () => {
+  if (!isNode) {
+    // Clean up old legacy keys
+    window.localStorage.removeItem("base44_access_token");
+    window.localStorage.removeItem("token");
 
-const getAppParams = () => {
-	if (isClearAccessTokenRequested()) {
-		clearStoredAccessToken();
-	}
-	return {
-		appId: import.meta.env.VITE_BASE44_APP_ID,
-		token: getAccessToken(),
-		functionsVersion: import.meta.env.VITE_BASE44_FUNCTIONS_VERSION,
-		appBaseUrl: import.meta.env.VITE_BASE44_APP_BASE_URL,
-	}
-}
+    // Clear active Supabase session and storage key
+    await supabase.auth.signOut();
+  }
+};
 
+export const getAppParams = () => {
+  if (isClearAccessTokenRequested()) {
+    clearStoredAccessToken();
+  }
 
-export const appParams = {
-	...getAppParams()
-}
+  return {
+    appName: "Signal Intercept Log",
+    supabaseUrl: import.meta.env.VITE_SUPABASE_URL,
+    supabaseAnonKey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+  };
+};
+
+export const appParams = getAppParams();
+export default appParams;

@@ -6,8 +6,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Mail, ArrowLeft, Loader2 } from "lucide-react";
 import AuthLayout from "@/components/AuthLayout";
+import { useAuth } from "@/lib/AuthContext";
 
 export default function ForgotPassword() {
+  const { resetPassword } = useAuth(); // <-- Added hook
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
@@ -16,9 +18,11 @@ export default function ForgotPassword() {
     e.preventDefault();
     setLoading(true);
     try {
-      await base44.auth.resetPasswordRequest(email);
-    } catch {
-      // Always show success regardless
+      await resetPassword(email); // <-- Replaced base44 call
+    } catch (error) {
+      console.error("Password reset error:", error);
+      // Depending on your security preference, you might still want to 
+      // show success even if the email wasn't found, to prevent email enumeration.
     } finally {
       setLoading(false);
       setSent(true);
